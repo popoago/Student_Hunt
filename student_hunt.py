@@ -1,0 +1,50 @@
+import pandas as pd
+import numpy as np 
+from pandas import DataFrame,Series
+
+
+#read the files
+train = pd.read_csv("Train_xyqdbho.csv")
+test = pd.read_csv("Test_pyI9Owa.csv")
+
+#merging test and train datasets
+train["Train"] = True
+test["Train"] = False
+data=pd.concat([train,test],axis=0)
+
+#converting Date to datetime format
+data["Date"] = data.Date.apply(lambda x:pd.to_datetime(x))
+data["Day"] = data.Date.dt.weekday
+#weekday or weekend
+data["Weekday"] = data["Day"].apply(lambda x: 1 if x in range(0,5) else 0)
+data["Year"] = data.Date.dt.year
+data["Month"] = data.Date.dt.month
+
+
+#missing value treatment
+missing = list(pd.isnull(data).sum().loc[pd.isnull(data).sum()>0,].index)
+for i in missing:
+    data[i] = data.groupby("Date").transform(lambda x: x.fillna(x.mean()))[i]
+
+
+
+#modelling
+month = pd.get_dummies(data["Month"],drop_first=True,prefix="month")
+weekday = pd.get_dummies(data["Weekday"],drop_first=True,prefix="weekday")
+loc = pd.get_dummies(data["Location_Type"],drop_first=True,prefix="loc")
+data2 = pd.concat([data,weekday,month,loc],axis=1)
+data2.drop(["Day","Weekday","Location_Type","Year","Date","ID","Park_ID","Month","Train"],inplace=True,axis=1)
+train2 = data2.loc[data["Train"]==True,]
+test2 = data2.loc[data["Train"]==False,]
+features = list(train2.columns)
+features.remove("Footfall")
+train = train2[features]
+target = train2["Footfall"]
+test = test2[features]
+
+from sklearn.ensemble import GradientBoostingRegressor
+gbm = GradientBoostingRegressor(learning_rate=0.1, n_estimators=1500,max_depth=9, min_samples_split=1100,min_samples_leaf=600, subsample=1, random_state=10, max_features=7)
+gbm.fit(train,target)
+prediction = Series(gbm.predict(test),name="Footfall")
+out = pd.concat([data.loc[data["Train"]==False,"ID"].reset_index(drop=True),prediction],axis=1)
+out.to_csv("outputs.csv")
